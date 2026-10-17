@@ -73,6 +73,7 @@ export function initWizardChess() {
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
+    window.__scene = scene;
     scene.background = new THREE.Color(0x070a12);
     scene.fog = new THREE.FogExp2(0x080b14, 0.015);
 
@@ -936,7 +937,17 @@ export function initWizardChess() {
       const isStudio = themeName === 'studio';
 
       if (cathedralSceneRoot) {
-        cathedralSceneRoot.visible = isCathedral;
+        cathedralSceneRoot.visible = true;
+        cathedralSceneRoot.traverse((child) => {
+          if (!child.isMesh) return;
+          const nm = child.name || '';
+          const isAltar = nm.includes('Altar');
+          if (isCathedral) {
+            child.visible = true;
+          } else {
+            child.visible = isAltar;
+          }
+        });
       }
       for (const bl of brazierLights) {
         bl.visible = isCathedral;
@@ -1004,6 +1015,7 @@ export function initWizardChess() {
       }
 
       renderer.shadowMap.needsUpdate = true;
+      renderer.render(scene, camera);
     }
 
     // =========================================================================
@@ -1557,6 +1569,7 @@ export function initWizardChess() {
             setWallStoneLook(0);
             setFloorStoneLook(0);
             scene.add(cathedralRoot);
+            setEnvironmentTheme(currentEnvironmentTheme);
 
             bumpProgress('Cathedral Architecture Loaded...');
             resolve();
@@ -3863,7 +3876,9 @@ export function initWizardChess() {
       const roomPill = document.getElementById('room-pill');
       const capturedTray = document.getElementById('captured-tray');
 
-      turnDot.className = 'turn-dot' + (currentTurn === 'b' ? ' black' : '');
+      if (turnDot) {
+        turnDot.className = 'turn-dot' + (currentTurn === 'b' ? ' black' : '');
+      }
 
       const legalMoves = getAllLegalMoves(currentTurn);
       const inCheck = isKingInCheck(currentTurn, boardState);
@@ -3872,23 +3887,25 @@ export function initWizardChess() {
         gameOver = true;
         if (inCheck) {
           const winner = currentTurn === 'w' ? 'Black' : 'White';
-          turnText.textContent = `Checkmate — ${winner} Wins`;
+          if (turnText) turnText.textContent = `Checkmate — ${winner} Wins`;
           if (!checkmateState.active) {
             triggerCheckmateSequence(currentTurn, currentTurn === 'w' ? 'b' : 'w');
           }
         } else {
-          turnText.textContent = 'Stalemate — Draw';
+          if (turnText) turnText.textContent = 'Stalemate — Draw';
         }
       } else {
         const turnLabel = currentTurn === 'w' ? 'White to Move' : 'Black to Move';
         const aiColor = playerColor === 'w' ? 'b' : 'w';
         const isAiTurn = !scriptedGameActive && gameMode === 'single' && currentTurn === aiColor;
-        if (inCheck) {
-          turnText.textContent = `${turnLabel} (Check!)`;
-        } else if (isAiTurn) {
-          turnText.textContent = `${turnLabel} (AI)...`;
-        } else {
-          turnText.textContent = turnLabel;
+        if (turnText) {
+          if (inCheck) {
+            turnText.textContent = `${turnLabel} (Check!)`;
+          } else if (isAiTurn) {
+            turnText.textContent = `${turnLabel} (AI)...`;
+          } else {
+            turnText.textContent = turnLabel;
+          }
         }
       }
 
@@ -3906,10 +3923,12 @@ export function initWizardChess() {
         roomPill.style.display = 'none';
       }
 
-      if (capturedByWhite > 0 || capturedByBlack > 0) {
-        capturedTray.textContent = `Captured — White: ${capturedByWhite} | Black: ${capturedByBlack}`;
-      } else {
-        capturedTray.textContent = '';
+      if (capturedTray) {
+        if (capturedByWhite > 0 || capturedByBlack > 0) {
+          capturedTray.textContent = `Captured — White: ${capturedByWhite} | Black: ${capturedByBlack}`;
+        } else {
+          capturedTray.textContent = '';
+        }
       }
       if (typeof updateScriptBarUI === 'function') updateScriptBarUI();
     }
@@ -4278,8 +4297,10 @@ export function initWizardChess() {
       appliedMoveSeq = 0;
       appliedResetCount = data.room.resetCount || 0;
 
-      document.getElementById('modal-room-code').textContent = roomCode;
-      document.getElementById('room-created-panel').style.display = 'block';
+      const mrc = document.getElementById('modal-room-code');
+      if (mrc) mrc.textContent = roomCode;
+      const rcp = document.getElementById('room-created-panel');
+      if (rcp) rcp.style.display = 'block';
 
       resetChessBoard(true);
       startMultiplayerSync(roomCode);
@@ -4505,12 +4526,15 @@ export function initWizardChess() {
       const isSingle = tab === 'single';
       const isMulti = tab === 'multi';
       const isScript = tab === 'script';
-      document.getElementById('tab-single').classList.toggle('active', isSingle);
-      document.getElementById('tab-multi').classList.toggle('active', isMulti);
-      document.getElementById('tab-script').classList.toggle('active', isScript);
-      document.getElementById('panel-single').style.display = isSingle ? 'block' : 'none';
-      document.getElementById('panel-multi').style.display = isMulti ? 'block' : 'none';
-      document.getElementById('panel-script').style.display = isScript ? 'block' : 'none';
+      document.getElementById('tab-single')?.classList.toggle('active', isSingle);
+      document.getElementById('tab-multi')?.classList.toggle('active', isMulti);
+      document.getElementById('tab-script')?.classList.toggle('active', isScript);
+      const pSingle = document.getElementById('panel-single');
+      if (pSingle) pSingle.style.display = isSingle ? 'block' : 'none';
+      const pMulti = document.getElementById('panel-multi');
+      if (pMulti) pMulti.style.display = isMulti ? 'block' : 'none';
+      const pScript = document.getElementById('panel-script');
+      if (pScript) pScript.style.display = isScript ? 'block' : 'none';
     }
 
     document.getElementById('btn-lobby')?.addEventListener('click', () => openLobbyModal());
