@@ -1062,19 +1062,91 @@ export function initWizardChess() {
     scene.add(squareHighlightsGroup);
     const boardSquareMeshes = [];
 
+    const lightSqMat = new THREE.MeshStandardMaterial({
+      color: 0xdcd3c2,
+      roughness: 0.38,
+      metalness: 0.06
+    });
+    const darkSqMat = new THREE.MeshStandardMaterial({
+      color: 0x14171f,
+      roughness: 0.28,
+      metalness: 0.18
+    });
+
+    const lastMoveGroup = new THREE.Group();
+    scene.add(lastMoveGroup);
+
+    function setBoardTileTheme(themeId) {
+      if (themeId === 'emerald') {
+        lightSqMat.color.setHex(0xeef2e6);
+        darkSqMat.color.setHex(0x2d6a4f);
+      } else if (themeId === 'wood') {
+        lightSqMat.color.setHex(0xf5e6c8);
+        darkSqMat.color.setHex(0x78350f);
+      } else if (themeId === 'slate') {
+        lightSqMat.color.setHex(0x94a3b8);
+        darkSqMat.color.setHex(0x1e293b);
+      } else if (themeId === 'gold') {
+        lightSqMat.color.setHex(0xfef08a);
+        darkSqMat.color.setHex(0x27272a);
+      } else if (themeId === 'marble') {
+        lightSqMat.color.setHex(0xf8fafc);
+        darkSqMat.color.setHex(0x334155);
+      } else {
+        // Standard Gothic
+        lightSqMat.color.setHex(0xdcd3c2);
+        darkSqMat.color.setHex(0x14171f);
+      }
+      lightSqMat.needsUpdate = true;
+      darkSqMat.needsUpdate = true;
+      renderer.shadowMap.needsUpdate = true;
+      renderer.render(scene, camera);
+    }
+
+    function setLastMoveHighlight(fromSq, toSq) {
+      while (lastMoveGroup.children.length > 0) {
+        lastMoveGroup.remove(lastMoveGroup.children[0]);
+      }
+      if (!fromSq || !toSq) {
+        renderer.render(scene, camera);
+        return;
+      }
+
+      const f = squareToCoord(fromSq);
+      const t = squareToCoord(toSq);
+      const rimGeo = new THREE.RingGeometry(BOARD_SQ_SIZE * 0.32, BOARD_SQ_SIZE * 0.44, 32);
+      rimGeo.rotateX(-Math.PI / 2);
+
+      const fromMat = new THREE.MeshBasicMaterial({
+        color: 0xfacc15,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false
+      });
+      const toMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.65,
+        depthWrite: false
+      });
+
+      const fPos = boardToWorld(f.r, f.c);
+      const tPos = boardToWorld(t.r, t.c);
+
+      const fMesh = new THREE.Mesh(rimGeo, fromMat);
+      fMesh.position.set(fPos.x, BOARD_SURFACE_Y + 0.003, fPos.z);
+      lastMoveGroup.add(fMesh);
+
+      const tMesh = new THREE.Mesh(rimGeo, toMat);
+      tMesh.position.set(tPos.x, BOARD_SURFACE_Y + 0.003, tPos.z);
+      lastMoveGroup.add(tMesh);
+
+      renderer.render(scene, camera);
+    }
+
     function buildChessBoardGrid() {
       const tileH = 0.036;
       const sqGeo = new THREE.BoxGeometry(BOARD_SQ_SIZE * 0.985, tileH, BOARD_SQ_SIZE * 0.985);
-      const lightSqMat = new THREE.MeshStandardMaterial({
-        color: 0xdcd3c2,
-        roughness: 0.38,
-        metalness: 0.06
-      });
-      const darkSqMat = new THREE.MeshStandardMaterial({
-        color: 0x14171f,
-        roughness: 0.28,
-        metalness: 0.18
-      });
 
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
@@ -4693,6 +4765,8 @@ export function initWizardChess() {
         clearSquareHighlights();
         showSquareHighlights(f.r, f.c, [{ r: t.r, c: t.c, capture: false }]);
       },
+      setBoardTileTheme,
+      setLastMoveHighlight,
       clearHighlights: () => {
         clearSquareHighlights();
         selectedSquare = null;
@@ -4700,6 +4774,7 @@ export function initWizardChess() {
       },
       triggerAIMoveNow,
       resetChessBoard,
+      resetBoard: resetChessBoard,
       openLobbyModal,
       closeLobbyModal,
       toggleUI,
