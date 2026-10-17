@@ -1,20 +1,61 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 🧙‍♂️ 체스 마스터 3D (Wizard Chess 3D)
 
-# Run and deploy your AI Studio app
+실시간 온라인 WebSocket 2인 대국 & AI 훈련 엔진을 탑재한 프리미엄 3D 체스 게임입니다.  
+고딕 대성당 위자드 체스의 조각 석상 기물과 영화적 격투 파괴 물리엔진을 유지하면서, 기존 2D 체스 마스터의 모든 기능(네트워크 멀티플레이, 타이머, 기보/수순 복기, 형세 분석 바, 힌트, 무르기, 사운드 등)을 탑재하고 배경 테마(중세 성당, 푸른 하늘, 우주 성운, 스튜디오) 실시간 전환을 지원합니다.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/bundled/wizard-chess-3d
+## 🌟 주요 기능
 
-## Run Locally
+### 1. 🌐 실시간 네트워크 온라인 2인 대국 (WiFi & LAN & DuckDNS)
+- **실시간 방 만들기 & 참여**: 4자리 간편 룸 코드 또는 공개 방 목록에서 원클릭 입장.
+- **제한 시간 설정**: 3분 / 5분 / 10분 / 15분 / 무제한 대국 타이머 및 서버 동기화.
+- **QR 코드 스캔 참여**: 스마트폰 카메라로 스캔하여 1초 만에 모바일 브라우저로 대국 참여.
+- **무승부 제안 / 기권 / 재대국**: 실시간 상호 합의 무승부 팝업, 기권 처리, 재대국 신청.
+- **인게임 실시간 채팅 & 이모티콘**: 빠른 이모티콘 팝업 및 실시간 채팅 지원.
 
-**Prerequisites:**  Node.js
+### 2. 🤖 혼자 AI와 훈련 (AI Training Engine)
+- **5단계 AI 난이도**: 1단계(입문)부터 5단계(마스터)까지 선택 가능한 미니맥스/알파-베타 탐색 엔진.
+- **실시간 형세 평가 바 (Evaluation Bar)**: 폰 점수 단위(e.g. +1.8, -0.5)로 유불리를 시각화.
+- **최선수 힌트 (AI Hint)**: 위기 상황이나 복기 시 최선수를 보드에 빛나는 하이라이트로 안내.
+- **수 물리기 (Undo Move)**: 이전 수를 물리고 다시 생각할 수 있는 연습 기능.
 
+### 3. 👥 1개 기기 로컬 2인 대국 (Pass & Play)
+- 한 모니터나 태블릿에서 둘이서 마주보고 번갈아 둘 수 있는 로컬 모드.
+- 수를 둘 때마다 카메라 시점을 180도 자동 회전시켜주는 기능 지원.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 4. 🌤️ 실시간 배경 테마 전환 (Dynamic Environment Themes)
+- 🏰 **중세 대성당 (Cathedral)**: 웅장한 고딕 석조 성당 아치와 타오르는 화로 불꽃.
+- 🌤️ **푸른 하늘 (Blue Sky)**: 탁 트인 하늘과 구름, 따스한 자연 햇살 아래 떠 있는 대리석 제단.
+- 🌌 **우주 성운 (Cosmic Nebula)**: 신비로운 은하수 별무리(Starfield)와 네온 바이올렛 앰비언트.
+- 🏛️ **미니멀 스튜디오 (Studio)**: 세련되고 모던한 다크 쇼룸 스튜디오.
+
+### 5. 📜 기보 및 분석 시스템
+- **수순 기록**: 국제 표준 SAN 기보 실시간 기록.
+- **PGN & FEN 클립보드 복사**: 체스 분석 툴에 바로 붙여넣을 수 있는 원클릭 복사.
+- **잡은 말 트레이 (Captured Pieces)**: 잡힌 기물 및 기물 우위 점수(+3 등) 실시간 표시.
+- **폰 승급 팝업 (Promotion)**: 퀸, 룩, 비숍, 나이트 선택 모달.
+
+### 6. 🔊 Web Audio API 무지연 사운드
+- 착수, 캡처, 체크, 캐슬링, 승리 팡파레, 패배음 등 순수 Web Audio API 합성 사운드 내장.
+
+---
+
+## 🚀 실행 및 관리
+
+```bash
+# 디렉토리 이동
+cd /home/kw/kwsoft/chess3d
+
+# 의존성 설치 및 빌드
+npm install
+npm run build
+
+# 서비스 시작 / 중지 / 재시작
+./manage.sh start
+./manage.sh restart
+./manage.sh status
+```
+
+- **로컬 접속**: http://127.0.0.1:10210/chess3d/ 또는 http://172.30.1.70:10210/chess3d/
+- **DuckDNS 접속**: https://kwopi.duckdns.org/chess3d/

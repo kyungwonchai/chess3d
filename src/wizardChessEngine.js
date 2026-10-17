@@ -24,6 +24,22 @@ export function initWizardChess() {
       );
     }
 
+    function coordToSquare(r, c) {
+      const file = String.fromCharCode(97 + c);
+      const rank = 8 - r;
+      return `${file}${rank}`;
+    }
+
+    function squareToCoord(sq) {
+      if (!sq || sq.length < 2) return { r: 0, c: 0 };
+      const file = sq.charCodeAt(0) - 97;
+      const rank = parseInt(sq[1], 10);
+      return { r: 8 - rank, c: file };
+    }
+
+    let onMoveCompletedCallback = null;
+    let onUserMoveAttemptCallback = null;
+
     function easeInOutCubic(x) {
       return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
     }
@@ -806,27 +822,189 @@ export function initWizardChess() {
 
     createBrazierWarmGlowHalos();
 
-    // Consolidated Window Point Lights (4 side-aisle + 2 end-wall lights instead of 22 separate PointLights;
-    // fine local window & column raking relief is evaluated analytically in applyCathedralStoneRealismShader)
+    // Consolidated Window Point Lights (4 side-aisle + 2 end-wall lights instead of 22 separate PointLights)
+    const windowLightsList = [];
     for (const wz of [-8.8, 8.2]) {
       for (const sideSign of [-1, 1]) {
         const winLight = new THREE.PointLight(0x90beff, 4.2, 16.5, 1.35);
         winLight.position.set(sideSign * 5.3, 4.1, wz);
         scene.add(winLight);
+        windowLightsList.push(winLight);
       }
     }
     const northWinLight = new THREE.PointLight(0x9bc4ff, 6.4, 20.0, 1.30);
     northWinLight.position.set(0, 5.2, -18.2);
     scene.add(northWinLight);
+    windowLightsList.push(northWinLight);
 
     const southWinLight = new THREE.PointLight(0xffb85c, 6.4, 20.0, 1.30);
     southWinLight.position.set(0, 5.2, 18.2);
     scene.add(southWinLight);
+    windowLightsList.push(southWinLight);
 
-    // Impact Flash Light (kept visible=true with intensity=0 when idle so Three.js never recompiles shaders mid-attack!)
+    // Impact Flash Light
     const impactFlashLight = new THREE.PointLight(0xffb74d, 0, 6.0, 1.5);
     impactFlashLight.visible = true;
     scene.add(impactFlashLight);
+
+    // =========================================================================
+    // Dynamic Environment Themes (Cathedral, Blue Sky, Cosmic, Studio)
+    // =========================================================================
+    let cathedralSceneRoot = null;
+    let currentEnvironmentTheme = 'cathedral';
+
+    function createSkyDome() {
+      const skyGeo = new THREE.SphereGeometry(45, 32, 20);
+      const vertexShader = `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `;
+      const fragmentShader = `
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        uniform vec3 horizonColor;
+        uniform float offset;
+        uniform float exponent;
+        varying vec3 vWorldPosition;
+        void main() {
+          float h = normalize(vWorldPosition + offset).y;
+          float t = max(pow(max(h, 0.0), exponent), 0.0);
+          vec3 col = mix(horizonColor, topColor, t);
+          if (h < 0.0) {
+            col = mix(horizonColor, bottomColor, clamp(-h * 2.0, 0.0, 1.0));
+          }
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `;
+      const uniforms = {
+        topColor: { value: new THREE.Color(0x1d4ed8) },
+        bottomColor: { value: new THREE.Color(0x93c5fd) },
+        horizonColor: { value: new THREE.Color(0xffffff) },
+        offset: { value: 6.0 },
+        exponent: { value: 0.65 }
+      };
+      const skyMat = new THREE.ShaderMaterial({
+        vertexShader,
+        fragmentShader,
+        uniforms,
+        side: THREE.BackSide,
+        depthWrite: false
+      });
+      const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+      skyMesh.visible = false;
+      scene.add(skyMesh);
+      return skyMesh;
+    }
+
+    function createStarfield() {
+      const count = 1200;
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const r = 38 + Math.random() * 8;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(Math.random() * 2 - 1);
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = Math.abs(r * Math.cos(phi)) + 1.0;
+        positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const material = new THREE.PointsMaterial({
+        color: 0x93c5fd,
+        size: 0.25,
+        transparent: true,
+        opacity: 0.85
+      });
+      const stars = new THREE.Points(geometry, material);
+      stars.visible = false;
+      scene.add(stars);
+      return stars;
+    }
+
+    const skyDomeMesh = createSkyDome();
+    const starfieldMesh = createStarfield();
+
+    function setEnvironmentTheme(themeName) {
+      currentEnvironmentTheme = themeName;
+      const isCathedral = themeName === 'cathedral';
+      const isBlueSky = themeName === 'bluesky';
+      const isCosmic = themeName === 'cosmic';
+      const isStudio = themeName === 'studio';
+
+      if (cathedralSceneRoot) {
+        cathedralSceneRoot.visible = isCathedral;
+      }
+      for (const bl of brazierLights) {
+        bl.visible = isCathedral;
+      }
+      for (const bg of brazierGlowSprites) {
+        bg.visible = isCathedral;
+      }
+      for (const wl of windowLightsList) {
+        wl.visible = isCathedral;
+      }
+
+      if (isBlueSky) {
+        skyDomeMesh.visible = true;
+        starfieldMesh.visible = false;
+        scene.background = new THREE.Color(0x60a5fa);
+        scene.fog = new THREE.FogExp2(0x93c5fd, 0.007);
+        keyLight.color.setHex(0xfffaea);
+        keyLight.intensity = 3.4;
+        keyLight.position.set(5.0, 12.0, 6.0);
+        hemiLight.color.setHex(0x93c5fd);
+        hemiLight.groundColor.setHex(0x86efac);
+        hemiLight.intensity = 1.35;
+        rimLight.intensity = 0.9;
+        southFillLight.intensity = 0.8;
+      } else if (isCosmic) {
+        skyDomeMesh.visible = false;
+        starfieldMesh.visible = true;
+        scene.background = new THREE.Color(0x040612);
+        scene.fog = new THREE.FogExp2(0x060818, 0.005);
+        keyLight.color.setHex(0x818cf8);
+        keyLight.intensity = 2.2;
+        keyLight.position.set(3.8, 8.5, 4.2);
+        hemiLight.color.setHex(0x38bdf8);
+        hemiLight.groundColor.setHex(0x1e1b4b);
+        hemiLight.intensity = 0.85;
+        rimLight.intensity = 0.6;
+        southFillLight.intensity = 0.5;
+      } else if (isStudio) {
+        skyDomeMesh.visible = false;
+        starfieldMesh.visible = false;
+        scene.background = new THREE.Color(0x0e131f);
+        scene.fog = new THREE.FogExp2(0x0e131f, 0.012);
+        keyLight.color.setHex(0xffffff);
+        keyLight.intensity = 2.9;
+        keyLight.position.set(4.0, 9.0, 4.5);
+        hemiLight.color.setHex(0x94a3b8);
+        hemiLight.groundColor.setHex(0x1e293b);
+        hemiLight.intensity = 1.1;
+        rimLight.intensity = 0.8;
+        southFillLight.intensity = 0.6;
+      } else {
+        // Cathedral default
+        skyDomeMesh.visible = false;
+        starfieldMesh.visible = false;
+        scene.background = new THREE.Color(0x070a12);
+        scene.fog = new THREE.FogExp2(0x080b14, 0.015);
+        keyLight.color.setHex(0xfff0d6);
+        keyLight.intensity = 2.55;
+        keyLight.position.set(3.8, 8.5, 4.2);
+        hemiLight.color.setHex(0xd8ccb8);
+        hemiLight.groundColor.setHex(0x261d14);
+        hemiLight.intensity = 0.62;
+        rimLight.intensity = 0.72;
+        southFillLight.intensity = 0.52;
+      }
+
+      renderer.shadowMap.needsUpdate = true;
+    }
 
     // =========================================================================
     // Materials for White & Black Sculpted Stone Chess Pieces
@@ -1236,7 +1414,8 @@ export function initWizardChess() {
       await new Promise((resolve) => {
         loadGltfModel('option8_cathedral').then(
           (gltf) => {
-            const cathedralRoot = gltf.scene;
+            cathedralSceneRoot = gltf.scene;
+            const cathedralRoot = cathedralSceneRoot;
             cathedralRoot.position.set(0, 0, -0.65);
 
             cathedralRoot.traverse((child) => {
@@ -2494,10 +2673,11 @@ export function initWizardChess() {
           playPieceClip(castleRook, 'Idle', true, 0.18);
         }
 
-        // Pawn Promotion to Queen
+        // Pawn Promotion (Queen, Rook, Bishop, Knight)
         if (piece.type === 'pawn' && (toR === 0 || toR === 7)) {
           scene.remove(piece.mesh);
-          const promoted = instantiatePiece('queen', piece.color, toR, toC);
+          const promoType = options.promotion || 'queen';
+          const promoted = instantiatePiece(promoType, piece.color, toR, toC);
           promoted.hasMoved = true;
           boardState[toR][toC] = promoted;
         } else {
@@ -2520,6 +2700,23 @@ export function initWizardChess() {
         isAnimatingMove = false;
         updateTurnUI();
         maybeScheduleAIMove();
+
+        if (typeof onMoveCompletedCallback === 'function') {
+          try {
+            onMoveCompletedCallback({
+              from: coordToSquare(fromR, fromC),
+              to: coordToSquare(toR, toC),
+              color: piece.color,
+              pieceType: piece.type,
+              isCapture,
+              isCastling,
+              promotion: options.promotion || 'queen',
+              turn: currentTurn
+            });
+          } catch (err) {
+            console.error('onMoveCompletedCallback error:', err);
+          }
+        }
       }
 
       function stepMove(dt) {
@@ -3792,6 +3989,31 @@ export function initWizardChess() {
             (m.castle && m.r === clickedR && m.rookFromC === clickedC)
         );
         if (move) {
+          const fromSq = coordToSquare(selectedSquare.r, selectedSquare.c);
+          const toSq = coordToSquare(move.r, move.c);
+          const p = boardState[selectedSquare.r]?.[selectedSquare.c];
+          const isPawnPromotion = Boolean(p && p.type === 'pawn' && (move.r === 0 || move.r === 7));
+
+          if (typeof onUserMoveAttemptCallback === 'function') {
+            const allowMove = onUserMoveAttemptCallback({
+              from: fromSq,
+              to: toSq,
+              fromR: selectedSquare.r,
+              fromC: selectedSquare.c,
+              toR: move.r,
+              toC: move.c,
+              isPromotion: isPawnPromotion,
+              color: p ? p.color : currentTurn,
+              pieceType: p ? p.type : 'pawn'
+            });
+            if (allowMove === false) {
+              clearSquareHighlights();
+              selectedSquare = null;
+              validMoves = [];
+              return;
+            }
+          }
+
           executeChessMove(selectedSquare.r, selectedSquare.c, move.r, move.c);
           return;
         }
@@ -4428,6 +4650,30 @@ export function initWizardChess() {
         else heldCameraKeys.delete(code);
       },
       executeChessMove,
+      setTheme: setEnvironmentTheme,
+      getTheme: () => currentEnvironmentTheme,
+      makeMove: (fromSq, toSq, promotion = 'queen') => {
+        const f = squareToCoord(fromSq);
+        const t = squareToCoord(toSq);
+        return executeChessMove(f.r, f.c, t.r, t.c, { fromRemote: true, promotion });
+      },
+      setOnMoveCompleted: (fn) => { onMoveCompletedCallback = fn; },
+      setOnUserMoveAttempt: (fn) => { onUserMoveAttemptCallback = fn; },
+      setBoardOrientation: (color) => {
+        playerColor = color === 'b' ? 'b' : 'w';
+        setCameraForSide(playerColor, true);
+      },
+      highlightHint: (fromSq, toSq) => {
+        const f = squareToCoord(fromSq);
+        const t = squareToCoord(toSq);
+        clearSquareHighlights();
+        showSquareHighlights(f.r, f.c, [{ r: t.r, c: t.c, capture: false }]);
+      },
+      clearHighlights: () => {
+        clearSquareHighlights();
+        selectedSquare = null;
+        validMoves = [];
+      },
       triggerAIMoveNow,
       resetChessBoard,
       openLobbyModal,
