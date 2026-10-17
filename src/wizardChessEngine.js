@@ -5,6 +5,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 
 /** @type {any} */
 const THREE = THREE_NS;
+window.THREE = THREE;
 const SkeletonUtils = { clone: cloneSkeleton };
 
 export function initWizardChess() {
@@ -114,7 +115,7 @@ export function initWizardChess() {
     }
 
     const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.22, 65);
-    camera.position.set(0, 2.22, 2.72);
+    camera.position.set(0, 2.65, 2.45);
 
     const orbitControls = new OrbitControls(camera, renderer.domElement);
     orbitControls.enableDamping = true;
@@ -123,7 +124,7 @@ export function initWizardChess() {
     orbitControls.minPolarAngle = 0.05;
     orbitControls.minDistance = 0.95;
     orbitControls.maxDistance = 36.0;
-    orbitControls.target.set(0, 0.85, -0.15);
+    orbitControls.target.set(0, 0.78, 0.05);
     orbitControls.update();
 
     // =========================================================================
@@ -1759,8 +1760,8 @@ export function initWizardChess() {
       // White sits at +Z looking toward -Z (across the Obsidian Altar down the Cathedral Nave & Rose Window)
       // Black sits at -Z looking toward +Z (across the Obsidian Altar toward the South Narthex Royal Amber Triptych)
       const zSign = color === 'b' ? -1 : 1;
-      const desiredPos = new THREE.Vector3(0, 2.22, zSign * 2.72);
-      const desiredTarget = new THREE.Vector3(0, 0.85, zSign * -0.15);
+      const desiredPos = new THREE.Vector3(0, 2.65, zSign * 2.45);
+      const desiredTarget = new THREE.Vector3(0, 0.78, zSign * 0.05);
       if (immediate) {
         activeCamTransition = null;
         camera.position.copy(desiredPos);
@@ -2050,6 +2051,50 @@ export function initWizardChess() {
       updateTurnUI();
       if (typeof updateScriptBarUI === 'function') updateScriptBarUI();
       maybeScheduleAIMove();
+    }
+
+    function loadFen(fen) {
+      if (aiTimer) {
+        clearTimeout(aiTimer);
+        aiTimer = null;
+      }
+      activeMoveTweens.length = 0;
+      isAnimatingMove = false;
+      gameOver = false;
+      clearCheckmateSequence();
+      clearSquareHighlights();
+      selectedSquare = null;
+      validMoves = [];
+      clearAllPieces();
+
+      if (!fen || typeof fen !== 'string') return;
+      const parts = fen.split(' ');
+      const rows = parts[0].split('/');
+      currentTurn = parts[1] === 'b' ? 'b' : 'w';
+
+      const typeMap = {
+        p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king'
+      };
+
+      for (let r = 0; r < 8; r++) {
+        const rowStr = rows[r];
+        if (!rowStr) continue;
+        let c = 0;
+        for (const ch of rowStr) {
+          if (/\d/.test(ch)) {
+            c += parseInt(ch, 10);
+          } else {
+            const color = ch === ch.toUpperCase() ? 'w' : 'b';
+            const type = typeMap[ch.toLowerCase()];
+            if (type && c < 8) {
+              boardState[r][c] = instantiatePiece(type, color, r, c);
+            }
+            c++;
+          }
+        }
+      }
+      renderer.shadowMap.needsUpdate = true;
+      updateTurnUI();
     }
 
     // =========================================================================
@@ -4011,19 +4056,66 @@ export function initWizardChess() {
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let pointerDownPos = { x: 0, y: 0 };
+    let dragStartSquare = null;
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
       pointerDownPos = { x: e.clientX, y: e.clientY };
+      dragStartSquare = null;
+
+      if (isAnimatingMove || gameOver) return;
+      if (!onUserMoveAttemptCallback) {
+        if (gameMode === 'multi' && currentTurn !== playerColor) return;
+        if (!scriptedGameActive && gameMode === 'single' && currentTurn !== playerColor && aiTimer !== null) return;
+      }
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+
+      const pieceMeshes = [];
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (boardState[r][c] && boardState[r][c].mesh) {
+            pieceMeshes.push(boardState[r][c].mesh);
+          }
+        }
+      }
+      const hits = raycaster.intersectObjects([...pieceMeshes, ...boardSquareMeshes], true);
+      if (hits.length > 0) {
+        for (const hit of hits) {
+          let obj = hit.object;
+          let found = false;
+          while (obj) {
+            if (obj.userData && obj.userData.piece && obj.userData.piece.color === currentTurn) {
+              const pr = obj.userData.piece.r;
+              const pc = obj.userData.piece.c;
+              dragStartSquare = { r: pr, c: pc, validMoves: getLegalMovesForPiece(pr, pc) };
+              found = true;
+              break;
+            }
+            if (obj.userData && obj.userData.isSquare) {
+              const p = boardState[obj.userData.r]?.[obj.userData.c];
+              if (p && p.color === currentTurn) {
+                dragStartSquare = { r: obj.userData.r, c: obj.userData.c, validMoves: getLegalMovesForPiece(obj.userData.r, obj.userData.c) };
+                found = true;
+                break;
+              }
+            }
+            obj = obj.parent;
+          }
+          if (found) break;
+        }
+      }
     });
 
     renderer.domElement.addEventListener('pointerup', (e) => {
-      const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
-      if (moveDist > 6) return;
       if (isAnimatingMove || gameOver) return;
 
-      // Enforce turn ownership in Multiplayer, and in Single Player only block while AI auto-move timer is actively pending
-      if (gameMode === 'multi' && currentTurn !== playerColor) return;
-      if (!scriptedGameActive && gameMode === 'single' && currentTurn !== playerColor && aiTimer !== null) return;
+      if (!onUserMoveAttemptCallback) {
+        if (gameMode === 'multi' && currentTurn !== playerColor) return;
+        if (!scriptedGameActive && gameMode === 'single' && currentTurn !== playerColor && aiTimer !== null) return;
+      }
 
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -4046,68 +4138,137 @@ export function initWizardChess() {
         clearSquareHighlights();
         selectedSquare = null;
         validMoves = [];
+        dragStartSquare = null;
         return;
       }
 
-      let clickedR = -1;
-      let clickedC = -1;
-      let obj = hits[0].object;
-      while (obj) {
-        if (obj.userData && obj.userData.piece) {
-          clickedR = obj.userData.piece.r;
-          clickedC = obj.userData.piece.c;
-          break;
+      function getCoordFromHit(hit) {
+        let obj = hit.object;
+        while (obj) {
+          if (obj.userData && obj.userData.piece) {
+            return { r: obj.userData.piece.r, c: obj.userData.piece.c };
+          }
+          if (obj.userData && obj.userData.isSquare) {
+            return { r: obj.userData.r, c: obj.userData.c };
+          }
+          obj = obj.parent;
         }
-        if (obj.userData && obj.userData.isSquare) {
-          clickedR = obj.userData.r;
-          clickedC = obj.userData.c;
-          break;
-        }
-        obj = obj.parent;
+        return null;
       }
 
-      if (clickedR === -1) return;
+      // Check if candidate source is available (either from previous click selection or current drag-and-drop)
+      const candidateSource = selectedSquare || (dragStartSquare ? dragStartSquare : null);
+      const movesPool = selectedSquare ? validMoves : (dragStartSquare ? dragStartSquare.validMoves : []);
 
-      // Cancel any pending scripted pre-move highlight timer when the user manually interacts with the board
-      if (preMoveHighlightTask) {
-        preMoveHighlightTask = null;
-      }
-
-      if (selectedSquare) {
-        const move = validMoves.find(
-          (m) =>
-            (m.r === clickedR && m.c === clickedC) ||
-            (m.castle && m.r === clickedR && m.rookFromC === clickedC)
-        );
-        if (move) {
-          const fromSq = coordToSquare(selectedSquare.r, selectedSquare.c);
-          const toSq = coordToSquare(move.r, move.c);
-          const p = boardState[selectedSquare.r]?.[selectedSquare.c];
-          const isPawnPromotion = Boolean(p && p.type === 'pawn' && (move.r === 0 || move.r === 7));
-
-          if (typeof onUserMoveAttemptCallback === 'function') {
-            const allowMove = onUserMoveAttemptCallback({
-              from: fromSq,
-              to: toSq,
-              fromR: selectedSquare.r,
-              fromC: selectedSquare.c,
-              toR: move.r,
-              toC: move.c,
-              isPromotion: isPawnPromotion,
-              color: p ? p.color : currentTurn,
-              pieceType: p ? p.type : 'pawn'
-            });
-            if (allowMove === false) {
-              clearSquareHighlights();
-              selectedSquare = null;
-              validMoves = [];
-              return;
+      // If candidate source exists, check if ANY hit in the ray corresponds to a legal destination square
+      let matchedMove = null;
+      if (candidateSource && movesPool.length > 0) {
+        for (const hit of hits) {
+          const coord = getCoordFromHit(hit);
+          if (coord) {
+            const m = movesPool.find(
+              (cand) =>
+                (cand.r === coord.r && cand.c === coord.c) ||
+                (cand.castle && cand.r === coord.r && cand.rookFromC === coord.c)
+            );
+            if (m) {
+              matchedMove = m;
+              break;
             }
           }
-
-          executeChessMove(selectedSquare.r, selectedSquare.c, move.r, move.c);
-          return;
         }
+      }
+
+      if (candidateSource && matchedMove) {
+        const fromR = candidateSource.r;
+        const fromC = candidateSource.c;
+        const toR = matchedMove.r;
+        const toC = matchedMove.c;
+        const fromSq = coordToSquare(fromR, fromC);
+        const toSq = coordToSquare(toR, toC);
+        const p = boardState[fromR]?.[fromC];
+        const isPawnPromotion = Boolean(p && p.type === 'pawn' && (toR === 0 || toR === 7));
+
+        if (typeof onUserMoveAttemptCallback === 'function') {
+          const allowMove = onUserMoveAttemptCallback({
+            from: fromSq,
+            to: toSq,
+            fromR,
+            fromC,
+            toR,
+            toC,
+            isPromotion: isPawnPromotion,
+            color: p ? p.color : currentTurn,
+            pieceType: p ? p.type : 'pawn'
+          });
+          if (allowMove === false) {
+            clearSquareHighlights();
+            selectedSquare = null;
+            validMoves = [];
+            dragStartSquare = null;
+            return;
+          }
+        }
+
+        selectedSquare = null;
+        validMoves = [];
+        dragStartSquare = null;
+        executeChessMove(fromR, fromC, toR, toC);
+        return;
+      }
+
+      // Otherwise: selecting a friendly piece or deselecting
+      let clickedR = -1;
+      let clickedC = -1;
+
+      // Priority 1: Square tile under cursor that has a piece of current turn
+      for (const hit of hits) {
+        let obj = hit.object;
+        while (obj) {
+          if (obj.userData && obj.userData.isSquare) {
+            const pieceOnSq = boardState[obj.userData.r]?.[obj.userData.c];
+            if (pieceOnSq && pieceOnSq.color === currentTurn) {
+              clickedR = obj.userData.r;
+              clickedC = obj.userData.c;
+              break;
+            }
+          }
+          obj = obj.parent;
+        }
+        if (clickedR !== -1) break;
+      }
+
+      // Priority 2: Piece mesh of current turn
+      if (clickedR === -1) {
+        for (const hit of hits) {
+          let obj = hit.object;
+          while (obj) {
+            if (obj.userData && obj.userData.piece && obj.userData.piece.color === currentTurn) {
+              clickedR = obj.userData.piece.r;
+              clickedC = obj.userData.piece.c;
+              break;
+            }
+            obj = obj.parent;
+          }
+          if (clickedR !== -1) break;
+        }
+      }
+
+      // Priority 3: Any square or piece under cursor
+      if (clickedR === -1) {
+        for (const hit of hits) {
+          const coord = getCoordFromHit(hit);
+          if (coord) {
+            clickedR = coord.r;
+            clickedC = coord.c;
+            break;
+          }
+        }
+      }
+
+      if (clickedR === -1) {
+        dragStartSquare = null;
+        return;
       }
 
       const clickedPiece = boardState[clickedR][clickedC];
@@ -4120,6 +4281,7 @@ export function initWizardChess() {
         selectedSquare = null;
         validMoves = [];
       }
+      dragStartSquare = null;
     });
 
     // =========================================================================
@@ -4754,7 +4916,10 @@ export function initWizardChess() {
         return executeChessMove(f.r, f.c, t.r, t.c, { fromRemote: true, promotion });
       },
       setOnMoveCompleted: (fn) => { onMoveCompletedCallback = fn; },
-      setOnUserMoveAttempt: (fn) => { onUserMoveAttemptCallback = fn; },
+      setOnUserMoveAttempt: (fn) => {
+        onUserMoveAttemptCallback = fn;
+        aiAutoPlay = false;
+      },
       setBoardOrientation: (color) => {
         playerColor = color === 'b' ? 'b' : 'w';
         setCameraForSide(playerColor, true);
@@ -4769,10 +4934,11 @@ export function initWizardChess() {
       setLastMoveHighlight,
       clearHighlights: () => {
         clearSquareHighlights();
-        selectedSquare = null;
-        validMoves = [];
       },
-      triggerAIMoveNow,
+      getBoardState: () => boardState,
+      getCurrentTurn: () => currentTurn,
+      getCamera: () => camera,
+      loadFen,
       resetChessBoard,
       resetBoard: resetChessBoard,
       openLobbyModal,
@@ -5266,7 +5432,7 @@ export function initWizardChess() {
     };
 
     function animate() {
-      if (!navigator.webdriver && !manualStepMode) {
+      if (!manualStepMode) {
         requestAnimationFrame(animate);
       }
       if (manualStepMode) return;
@@ -5280,7 +5446,6 @@ export function initWizardChess() {
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-
     // Startup sequence (Standalone Single-Player AI Studio Applet)
     (async () => {
       await loadAllAssets();
@@ -5290,10 +5455,6 @@ export function initWizardChess() {
         playerColor = 'b';
       }
       resetChessBoard(true, true);
-      if (navigator.webdriver) {
-        window.wizardChess.stepBy(0.9, 15);
-      } else {
-        animate();
-      }
+      animate();
     })();
 }

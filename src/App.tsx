@@ -273,6 +273,7 @@ export default function App() {
   // Keep callback refs fresh
   onUserMoveAttemptRef.current = (moveAttempt: any) => {
     const { from, to, isPromotion } = moveAttempt;
+    const win = window as any;
 
     // Turn check
     if (chessRef.current.isGameOver()) return false;
@@ -300,8 +301,6 @@ export default function App() {
       const move = chessRef.current.move({ from, to, promotion: 'q' });
       if (!move) return false;
 
-      const win = window as any;
-      win.wizardChess?.clearHighlights?.();
       setTacticalCard(null);
 
       // Play Sound
@@ -338,6 +337,7 @@ export default function App() {
 
       return true;
     } catch (e) {
+      console.error('onUserMoveAttempt validation error:', e);
       return false;
     }
   };
@@ -442,15 +442,19 @@ export default function App() {
     }
 
     refreshBoardAnalysis(chessRef.current);
-    win.wizardChess?.resetBoard?.();
-    win.wizardChess?.clearHighlights?.();
+    if (win.wizardChess?.loadFen) {
+      win.wizardChess.loadFen(chessRef.current.fen());
+    } else {
+      win.wizardChess?.resetBoard?.();
+      win.wizardChess?.clearHighlights?.();
+      const moves = chessRef.current.history({ verbose: true });
+      for (const m of moves) {
+        win.wizardChess?.makeMove(m.from, m.to, m.promotion || 'queen');
+      }
+    }
     setTacticalCard(null);
 
-    // Replay remaining history on 3D board
     const moves = chessRef.current.history({ verbose: true });
-    for (const m of moves) {
-      win.wizardChess?.makeMove(m.from, m.to, m.promotion || 'queen');
-    }
     if (moves.length > 0 && showLastMove) {
       const last = moves[moves.length - 1];
       win.wizardChess?.setLastMoveHighlight?.(last.from, last.to);
